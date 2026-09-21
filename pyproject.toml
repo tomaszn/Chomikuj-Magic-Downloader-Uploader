@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chomikuj-magic"
+version = "0.1.0"
+description = "CLI and GUI tools for bulk uploading and downloading files from Chomikuj.pl"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+dynamic = ["dependencies"]
+
+[project.scripts]
+chomikuj-magic = "chomikuj_magic_command_line:main"
+chomikuj-magic-cli = "chomikuj_magic_command_line:main"
+chomikuj-magic-gui = "chomikuj_magic_gui:main"
+
+[tool.setuptools]
+py-modules = [
+    "chomikuj_magic_command_line",
+    "chomikuj_magic_gui",
+]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+include = ["chomikuj*"]
