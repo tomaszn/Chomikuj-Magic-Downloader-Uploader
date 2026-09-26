@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
-import re
-from urllib.parse import unquote_plus, urlsplit
+from urllib.parse import urlsplit
 
 from .config_store import ConfigStore
 from .common_runtime import FILE_ID_RE, ApiRequestError, ChomikujError, PasswordSkippedError
 from .i18n import ensure_i18n
 from .api_mobile import ApiMobile
+from .name_policy import NAME_POLICY
 
 
 class BaseAccountFolder:
@@ -24,12 +24,8 @@ class BaseAccountFolder:
         self.folder_passwords = {}
         self.owner_passwords = {}
 
-    def clean(self, value):
-        value = re.sub(r"\*([0-9a-fA-F]{2})", r"%\1", str(value))
-        return unquote_plus(value).strip().strip("/")
-
     def same_name(self, left, right):
-        return self.clean(left).casefold() == self.clean(right).casefold()
+        return NAME_POLICY.remote_name_key(left) == NAME_POLICY.remote_name_key(right)
 
     def file_name(self, entry):
         name = entry.get("FileName") or ""
@@ -37,7 +33,7 @@ class BaseAccountFolder:
         return f"{name}.{ext}" if ext and not name.lower().endswith("." + ext.lower()) else name
 
     def _owner_key(self, owner_name):
-        return self.clean(owner_name).casefold()
+        return NAME_POLICY.remote_name_key(owner_name)
 
     def _remember_owner_password(self, owner_name, password):
         if not password:
@@ -173,7 +169,7 @@ class BaseAccountFolder:
             retry = True
 
     def owner_info(self, owner_name):
-        key = self.clean(owner_name).casefold()
+        key = NAME_POLICY.remote_name_key(owner_name)
         if key in self.owner_cache:
             return self.owner_cache[key]
         login_name = self.api.account_name or self.api.username
@@ -193,7 +189,7 @@ class BaseAccountFolder:
             for result in payload.get("Results", []):
                 if self.same_name(result.get("AccountName", ""), owner_name):
                     account_id = str(result.get("AccountId") or "")
-                    key = account_id or self.clean(result.get("AccountName", "")).casefold()
+                    key = account_id or NAME_POLICY.remote_name_key(result.get("AccountName", ""))
                     matches.setdefault(key, result)
             if not payload.get("IsNextPageAvailable"):
                 break
@@ -216,7 +212,7 @@ class BaseAccountFolder:
                 raise
             owner = {"id": self.api.account_id, "name": owner_name}
         self.owner_cache["__current_owner__"] = owner
-        self.owner_cache[self.clean(owner["name"]).casefold()] = owner
+        self.owner_cache[NAME_POLICY.remote_name_key(owner["name"])] = owner
         return owner
 
     def list_folder(self, owner, folder_id):
@@ -256,7 +252,7 @@ class BaseAccountFolder:
         parsed = urlsplit(url)
         if parsed.scheme not in ("http", "https") or parsed.netloc not in ("chomikuj.pl", "www.chomikuj.pl"):
             raise ChomikujError(self.i18n("error.unsupported_url", url=url))
-        parts = [self.clean(part) for part in parsed.path.split("/") if part]
+        parts = [NAME_POLICY.url_component_decode(part) for part in parsed.path.split("/") if part]
         if not parts:
             raise ChomikujError(self.i18n("error.invalid_url", url=url))
         return parts[0], parts[1:]
@@ -278,7 +274,7 @@ class BaseAccountFolder:
         return folder_id, resolved
 
     def extract_file_id(self, segment):
-        match = FILE_ID_RE.search(self.clean(segment))
+        match = FILE_ID_RE.search(str(segment or ""))
         return match.group(1) if match else None
 
     def find_file_in_folder(self, owner, folder_id, segment):
@@ -288,10 +284,10 @@ class BaseAccountFolder:
             for entry in listing["Files"]:
                 if str(entry.get("FileId")) == file_id:
                     return entry
-        names = {self.clean(segment).casefold()}
+        name_key = NAME_POLICY.remote_name_key(segment)
         for entry in listing["Files"]:
-            if self.clean(self.file_name(entry)).casefold() in names:
+            if NAME_POLICY.remote_name_key(self.file_name(entry)) == name_key:
                 return entry
-            if self.clean(entry.get("FileName", "")).casefold() in names:
+            if NAME_POLICY.remote_name_key(entry.get("FileName", "")) == name_key:
                 return entry
         return None

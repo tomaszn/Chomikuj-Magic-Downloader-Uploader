@@ -3,11 +3,11 @@
 import os
 import threading
 
-from .common_local_name import encode_local_component
 from .common_runtime import ChomikujError
 from .download_worker import DownloadWorker
 from .download_planner import DownloadPlanner
 from .download_source import DownloadSourceDirect
+from .name_policy import NAME_POLICY
 
 
 class DownloadManager:
@@ -32,13 +32,12 @@ class DownloadManager:
         self.i18n = self.planner.i18n
         self.semaphore = threading.Semaphore(self.max_threads)
         self.threads = []
-        self.queued = set()
+        self.queued = {}
 
     def queue_file(self, file_name, source, rel_dir):
-        path = self._local_path(file_name, rel_dir)
-        if path in self.queued:
+        path = self._local_path_reserve(file_name, rel_dir)
+        if path is None:
             return
-        self.queued.add(path)
         if self.status_sink:
             self.status_sink.download_queued(path)
         if isinstance(source, str):
@@ -52,14 +51,27 @@ class DownloadManager:
         if rel_dir:
             segments = [segment for segment in rel_dir.strip("/").split("/") if segment]
             if not self.keep_original_names:
-                segments = [encode_local_component(segment) for segment in segments]
+                segments = [NAME_POLICY.local_component_sanitize(segment) for segment in segments]
             if segments:
                 parts.append(os.path.join(*segments))
         if self.keep_original_names:
             parts.append(file_name)
         else:
-            parts.append(encode_local_component(file_name, allow_extension=True))
+            parts.append(NAME_POLICY.local_component_sanitize(file_name))
         return os.path.normpath(os.path.join(*parts))
+
+    def _local_path_reserve(self, file_name, rel_dir):
+        path = self._local_path(file_name, rel_dir)
+        identity = f"{rel_dir}\0{file_name}"
+        for candidate in NAME_POLICY.local_path_candidates(path, identity):
+            path_key = NAME_POLICY.local_path_key(candidate)
+            queued_identity = self.queued.get(path_key)
+            if queued_identity == identity:
+                return None
+            if queued_identity is None:
+                self.queued[path_key] = identity
+                return candidate
+        raise ChomikujError(f"Unable to create a unique local path for {file_name}")
 
     def handle_url(self, url):
         for file_name, source, rel_dir in self.planner.collect(url):
