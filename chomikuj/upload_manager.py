@@ -5,6 +5,7 @@ import threading
 
 from .base_account_folder import BaseAccountFolder
 from .common_runtime import ChomikujError
+from .name_policy import NAME_POLICY
 from .upload_worker import UploadWorker
 
 
@@ -34,7 +35,7 @@ class UploadManager(BaseAccountFolder):
             if not self.same_name(owner_name, owner["name"]):
                 raise ChomikujError(self.i18n("error.upload_account_only"))
             return segments
-        return [self.clean(part) for part in folder.split("/") if self.clean(part)]
+        return [part.strip() for part in folder.split("/") if part.strip()]
 
     def _invalidate_folder_cache(self, owner, folder_id):
         self.folder_cache.pop((owner["id"], str(folder_id)), None)
@@ -84,14 +85,14 @@ class UploadManager(BaseAccountFolder):
         for entry in listing.get("Files", []):
             for name in (self.file_name(entry), entry.get("FileName", "")):
                 if name:
-                    keys.add(self.clean(name).casefold())
+                    keys.add(NAME_POLICY.remote_name_key(name))
         return keys
 
     def _should_skip_existing(self, local_path, owner, folder_id, target):
         if self.force_upload_existing:
             return False
         file_name = os.path.basename(local_path)
-        if self.clean(file_name).casefold() not in self._remote_file_keys(owner, folder_id):
+        if NAME_POLICY.remote_name_key(file_name) not in self._remote_file_keys(owner, folder_id):
             return False
         self._emit("upload_skipped", os.path.abspath(local_path), target)
         return True

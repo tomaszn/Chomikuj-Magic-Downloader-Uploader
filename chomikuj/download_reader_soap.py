@@ -2,13 +2,14 @@
 
 import re
 import threading
-from urllib.parse import quote_plus, unquote_plus, urlsplit
+from urllib.parse import urlsplit
 
 from .api_soap import ApiSoap
 from .common_runtime import ChomikujError, DownloadSkippedError
 from .download_source import DownloadSourceDirect, DownloadSourceSoap
 from .folder_resolver_request_id_box import FolderResolverRequestIdBox
 from .i18n import ensure_i18n
+from .name_policy import NAME_POLICY
 
 
 class DownloadReaderSoap:
@@ -31,10 +32,6 @@ class DownloadReaderSoap:
         if self.debug and self.debug_hook:
             self.debug_hook(message)
 
-    def _decode(self, value):
-        value = re.sub(r"\*([0-9a-fA-F]{2})", r"%\1", str(value or ""))
-        return unquote_plus(value).strip().strip("/")
-
     def _split_raw_url(self, url):
         parsed = urlsplit(url)
         if parsed.scheme not in ("http", "https") or parsed.netloc not in ("chomikuj.pl", "www.chomikuj.pl"):
@@ -54,19 +51,16 @@ class DownloadReaderSoap:
         return candidates
 
     def _decoded_segments(self, raw_path):
-        return [self._decode(part) for part in raw_path.split("/") if part]
+        return [NAME_POLICY.url_component_decode(part) for part in raw_path.split("/") if part]
 
     def folder_segments(self, folder):
-        segments = [self._decode(part) for part in folder.get("global_id", "").split("/") if part]
+        segments = [NAME_POLICY.url_component_decode(part) for part in folder.get("global_id", "").split("/") if part]
         if segments:
             return segments[1:]
         return []
 
-    def _encode_chomik_component(self, value):
-        return re.sub(r"%([0-9A-Fa-f]{2})", lambda match: f"*{match.group(1).lower()}", quote_plus(str(value), safe="()"))
-
     def folder_request_path(self, owner_name, folder_segments):
-        encoded = [self._encode_chomik_component(part) for part in [owner_name, *folder_segments] if part]
+        encoded = [NAME_POLICY.url_component_encode(part) for part in [owner_name, *folder_segments] if part]
         return "/" + "/".join(encoded).strip("/")
 
     def _file_request_candidates(self, folder_request_path, entry):
@@ -92,7 +86,7 @@ class DownloadReaderSoap:
             if dot:
                 request_name += f".{ext}"
             request_name += suffix
-            encoded_name = self._encode_chomik_component(request_name)
+            encoded_name = NAME_POLICY.url_component_encode(request_name)
             raw_comma_name = encoded_name.replace("*2c", ",")
             for candidate_name in (raw_comma_name, encoded_name):
                 candidate = f"{folder_request_path}/{candidate_name}"

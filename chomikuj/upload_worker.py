@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import os
-import re
 import threading
 import time
 import zlib
@@ -11,6 +10,7 @@ import requests
 from .common_runtime import RETRY_ATTEMPTS, RETRY_BACKOFF_SECONDS, TIMEOUT, USER_AGENT, ChomikujError, is_timeout_error
 from .i18n import ensure_i18n
 from .api_mobile import ApiMobile
+from .name_policy import NAME_POLICY
 
 CHUNK_SIZE = 524288
 
@@ -63,9 +63,6 @@ class UploadWorker(threading.Thread):
                 crc = zlib.crc32(chunk, crc)
         return format(crc & 0xFFFFFFFF, "x")
 
-    def _escape_file_name(self, name):
-        return re.sub(r'[\?\:\<\>\/\*"\\\\]+', "_", name)
-
     def _upload_chunk(self, name, upload_url, offset, size):
         boundary = f"***{int(time.time() * 1000)}***"
         with open(self.local_path, "rb") as handle:
@@ -74,7 +71,7 @@ class UploadWorker(threading.Thread):
         body = b"".join(
             [
                 f"--{boundary}\r\n".encode("utf-8"),
-                f'Content-Disposition: form-data; name="files[]";filename="{self._escape_file_name(name)}"\r\n'.encode("utf-8"),
+                f'Content-Disposition: form-data; name="files[]";filename="{NAME_POLICY.multipart_filename_escape(name)}"\r\n'.encode("utf-8"),
                 b"\r\n",
                 chunk,
                 b"\r\n",
